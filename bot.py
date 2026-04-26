@@ -28,42 +28,69 @@ async def on_message(message):
 
     async with message.channel.typing():
 
-        # -------------------------
-        # 1. TRY VIDEO DOWNLOAD
-        # -------------------------
-        video_opts = {
-            'outtmpl': 'video.%(ext)s',
-            'format': 'best[height<=720]/best',
+        # -----------------------------
+        # STEP 1: PRE-CHECK METADATA
+        # -----------------------------
+        base_opts = {
             'cookiefile': 'cookies.txt',
             'quiet': True,
-            'merge_output_format': 'mp4'
+            'skip_download': True
         }
 
         try:
-            with yt_dlp.YoutubeDL(video_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+            with yt_dlp.YoutubeDL(base_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
 
-            file_path = None
+            # Detect if likely video or image post
+            is_video = False
 
-            if 'entries' in info:
-                info = info['entries'][0]
+            if info.get("ext") == "mp4":
+                is_video = True
 
-            file_path = ydl.prepare_filename(info)
-
-            if os.path.exists(file_path):
-                size = os.path.getsize(file_path)
-
-                if size <= 8 * 1024 * 1024:
-                    await message.channel.send(file=discord.File(file_path))
-                    os.remove(file_path)
-                    return
+            if "formats" in info:
+                for f in info["formats"]:
+                    if f.get("vcodec") != "none":
+                        is_video = True
+                        break
 
         except Exception:
-            pass  # video failed → try images next
+            is_video = False  # fallback assumption
 
-        # -------------------------
-        # 2. TRY IMAGE DOWNLOAD
-        # -------------------------
+        # -----------------------------
+        # STEP 2: VIDEO PATH
+        # -----------------------------
+        if is_video:
+            video_opts = {
+                'outtmpl': 'video.%(ext)s',
+                'format': 'best[height<=720]/best',
+                'cookiefile': 'cookies.txt',
+                'quiet': True,
+                'merge_output_format': 'mp4'
+            }
+
+            try:
+                with yt_dlp.YoutubeDL(video_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+
+                if 'entries' in info:
+                    info = info['entries'][0]
+
+                filename = ydl.prepare_filename(info)
+
+                if os.path.exists(filename):
+                    size = os.path.getsize(filename)
+
+                    if size <= 8 * 1024 * 1024:
+                        await message.channel.send(file=discord.File(filename))
+                        os.remove(filename)
+                        return
+
+            except Exception:
+                pass  # fall through to images
+
+        # -----------------------------
+        # STEP 3: IMAGE / CAROUSEL PATH
+        # -----------------------------
         image_opts = {
             'outtmpl': 'image.%(ext)s',
             'format': 'best',
@@ -75,9 +102,8 @@ async def on_message(message):
             with yt_dlp.YoutubeDL(image_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
 
-            files = []
-
             entries = info.get('entries', [info])
+            files = []
 
             for entry in entries:
                 filename = ydl.prepare_filename(entry)
@@ -91,11 +117,11 @@ async def on_message(message):
                 return
 
         except Exception:
-            pass  # image failed → fallback
+            pass
 
-        # -------------------------
-        # 3. FINAL FALLBACK
-        # -------------------------
+        # -----------------------------
+        # STEP 4: FINAL FALLBACK
+        # -----------------------------
         await message.channel.send(
             "⚠️ Couldn’t fully process this Instagram post. Here’s the link instead:\n" + url
         )
