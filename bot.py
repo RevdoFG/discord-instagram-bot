@@ -26,67 +26,78 @@ async def on_message(message):
 
     url = match.group(0)
 
-    try:
-        # 👇 Typing indicator starts here
-        async with message.channel.typing():
+    async with message.channel.typing():
 
-            ydl_opts = {
-                'outtmpl': '%(title)s.%(ext)s',
-                'format': 'best[height<=720]/best',
-                'cookiefile': 'cookies.txt',
-                'quiet': True,
-                'merge_output_format': 'mp4'
-            }
+        # -------------------------
+        # 1. TRY VIDEO DOWNLOAD
+        # -------------------------
+        video_opts = {
+            'outtmpl': 'video.%(ext)s',
+            'format': 'best[height<=720]/best',
+            'cookiefile': 'cookies.txt',
+            'quiet': True,
+            'merge_output_format': 'mp4'
+        }
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            with yt_dlp.YoutubeDL(video_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
 
-            files_to_send = []
+            file_path = None
+
+            if 'entries' in info:
+                info = info['entries'][0]
+
+            file_path = ydl.prepare_filename(info)
+
+            if os.path.exists(file_path):
+                size = os.path.getsize(file_path)
+
+                if size <= 8 * 1024 * 1024:
+                    await message.channel.send(file=discord.File(file_path))
+                    os.remove(file_path)
+                    return
+
+        except Exception:
+            pass  # video failed → try images next
+
+        # -------------------------
+        # 2. TRY IMAGE DOWNLOAD
+        # -------------------------
+        image_opts = {
+            'outtmpl': 'image.%(ext)s',
+            'format': 'best',
+            'cookiefile': 'cookies.txt',
+            'quiet': True
+        }
+
+        try:
+            with yt_dlp.YoutubeDL(image_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+
+            files = []
 
             entries = info.get('entries', [info])
 
             for entry in entries:
                 filename = ydl.prepare_filename(entry)
 
-                if not os.path.exists(filename):
-                    base = filename.rsplit(".", 1)[0]
-                    for ext in ["mp4", "jpg", "jpeg", "png", "webp"]:
-                        if os.path.exists(base + "." + ext):
-                            filename = base + "." + ext
-                            break
-
                 if os.path.exists(filename):
-                    files_to_send.append(filename)
+                    files.append(discord.File(filename))
+                    os.remove(filename)
 
-            discord_files = []
-            fallback_links = []
+            if files:
+                await message.channel.send(files=files)
+                return
 
-            for file in files_to_send:
-                file_size = os.path.getsize(file)
+        except Exception:
+            pass  # image failed → fallback
 
-                if file.endswith((".mp4", ".mov")) and file_size > 8 * 1024 * 1024:
-                    fallback_links.append(url)
-                    continue
-
-                discord_files.append(discord.File(file))
-
-        # 👇 Typing indicator stops BEFORE sending
-
-        # Send in batches of 10
-        for i in range(0, len(discord_files), 10):
-            await message.channel.send(files=discord_files[i:i+10])
-
-        if fallback_links:
-            await message.channel.send(
-                "Videos were too large " + url
-            )
-
-        # Cleanup
-        for file in files_to_send:
-            if os.path.exists(file):
-                os.remove(file)
-
-    except Exception as e:
-        await message.channel.send(f"❌ Error: {str(e)}")
+        # -------------------------
+        # 3. FINAL FALLBACK
+        # -------------------------
+        await message.channel.send(
+            "⚠️ Couldn’t fully process this Instagram post. Here’s the link instead:\n" + url
+        )
 
 client.run(TOKEN)
