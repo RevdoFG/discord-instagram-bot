@@ -1,21 +1,16 @@
 import discord
-import re
 import yt_dlp
 import os
-import time
+import re
 
-import os
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
-REEL_REGEX = r"(https?://(www\.)?instagram\.com/reel/[^\s]+)"
-
-# simple cooldown to avoid rate limits
-last_download_time = 0
-COOLDOWN_SECONDS = 10
+# Detect Instagram links
+INSTAGRAM_REGEX = r"(https?://(www\.)?instagram\.com/[^\s]+)"
 
 @client.event
 async def on_ready():
@@ -23,45 +18,48 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    global last_download_time
-
     if message.author == client.user:
         return
 
-    match = re.search(REEL_REGEX, message.content)
+    match = re.search(INSTAGRAM_REGEX, message.content)
     if not match:
         return
 
-    # cooldown protection
-    now = time.time()
-    if now - last_download_time < COOLDOWN_SECONDS:
-        await message.channel.send("⏳ Slow down a bit — Instagram rate limit protection active.")
-        return
-
-    last_download_time = now
-
     url = match.group(0)
-    await message.channel.send("faggot")
 
-    ydl_opts = {
-        'outtmpl': 'video.%(ext)s',
-        'format': 'mp4',
-        'cookiefile': 'cookies.txt',
-        'quiet': True
-    }
+    await message.channel.send("📥 Downloading Reel...")
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        ydl_opts = {
+            'outtmpl': 'video.%(ext)s',
+            'format': 'bestvideo[height<=720]+bestaudio/best[height<=720]',
+            'cookiefile': 'cookies.txt',
+            'quiet': True,
+            'merge_output_format': 'mp4'
+        }
 
-        # find downloaded file
-        for file in os.listdir():
-            if file.startswith("video"):
-                await message.channel.send(file=discord.File(file))
-                os.remove(file)
-                break
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+
+        # Ensure file is mp4
+        if not filename.endswith(".mp4"):
+            filename = filename.rsplit(".", 1)[0] + ".mp4"
+
+        # Check file size
+        file_size = os.path.getsize(filename)
+
+        if file_size > 8 * 1024 * 1024:
+            await message.channel.send(
+                "video too large:\n" + url
+            )
+        else:
+            await message.channel.send(file=discord.File(filename))
+
+        # Cleanup file
+        os.remove(filename)
 
     except Exception as e:
-        await message.channel.send(f"❌ Error: {e}")
+        await message.channel.send(f"❌ Error: {str(e)}")
 
 client.run(TOKEN)
