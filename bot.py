@@ -27,7 +27,7 @@ async def on_message(message):
 
     url = match.group(0)
 
-    await message.channel.send("📥 Downloading Reel...")
+    await message.channel.send("faggot")
 
     try:
         ydl_opts = {
