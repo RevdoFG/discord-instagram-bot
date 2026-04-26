@@ -32,7 +32,8 @@ async def on_message(message):
     try:
         ydl_opts = {
             'outtmpl': 'video.%(ext)s',
-            'format': 'bestvideo[height<=720]+bestaudio/best[height<=720]',
+            # ✅ FIXED FORMAT LINE
+            'format': 'best[height<=720]/best',
             'cookiefile': 'cookies.txt',
             'quiet': True,
             'merge_output_format': 'mp4'
@@ -51,7 +52,7 @@ async def on_message(message):
 
         if file_size > 8 * 1024 * 1024:
             await message.channel.send(
-                "video too large:\n" + url
+                "⚠️ Video too large for Discord, here's the link instead:\n" + url
             )
         else:
             await message.channel.send(file=discord.File(filename))
