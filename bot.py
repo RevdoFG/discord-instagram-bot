@@ -9,7 +9,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 
-# Detect Instagram links
 INSTAGRAM_REGEX = r"(https?://(www\.)?instagram\.com/[^\s]+)"
 
 @client.event
@@ -27,38 +26,65 @@ async def on_message(message):
 
     url = match.group(0)
 
-    await message.channel.send("faggot")
-
     try:
-        ydl_opts = {
-            'outtmpl': 'video.%(ext)s',
-            # ✅ FIXED FORMAT LINE
-            'format': 'best[height<=720]/best',
-            'cookiefile': 'cookies.txt',
-            'quiet': True,
-            'merge_output_format': 'mp4'
-        }
+        # 👇 Typing indicator starts here
+        async with message.channel.typing():
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
+            ydl_opts = {
+                'outtmpl': '%(title)s.%(ext)s',
+                'format': 'best[height<=720]/best',
+                'cookiefile': 'cookies.txt',
+                'quiet': True,
+                'merge_output_format': 'mp4'
+            }
 
-        # Ensure file is mp4
-        if not filename.endswith(".mp4"):
-            filename = filename.rsplit(".", 1)[0] + ".mp4"
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
 
-        # Check file size
-        file_size = os.path.getsize(filename)
+            files_to_send = []
 
-        if file_size > 8 * 1024 * 1024:
+            entries = info.get('entries', [info])
+
+            for entry in entries:
+                filename = ydl.prepare_filename(entry)
+
+                if not os.path.exists(filename):
+                    base = filename.rsplit(".", 1)[0]
+                    for ext in ["mp4", "jpg", "jpeg", "png", "webp"]:
+                        if os.path.exists(base + "." + ext):
+                            filename = base + "." + ext
+                            break
+
+                if os.path.exists(filename):
+                    files_to_send.append(filename)
+
+            discord_files = []
+            fallback_links = []
+
+            for file in files_to_send:
+                file_size = os.path.getsize(file)
+
+                if file.endswith((".mp4", ".mov")) and file_size > 8 * 1024 * 1024:
+                    fallback_links.append(url)
+                    continue
+
+                discord_files.append(discord.File(file))
+
+        # 👇 Typing indicator stops BEFORE sending
+
+        # Send in batches of 10
+        for i in range(0, len(discord_files), 10):
+            await message.channel.send(files=discord_files[i:i+10])
+
+        if fallback_links:
             await message.channel.send(
-                "⚠️ Video too large for Discord, here's the link instead:\n" + url
+                "Videos were too large " + url
             )
-        else:
-            await message.channel.send(file=discord.File(filename))
 
-        # Cleanup file
-        os.remove(filename)
+        # Cleanup
+        for file in files_to_send:
+            if os.path.exists(file):
+                os.remove(file)
 
     except Exception as e:
         await message.channel.send(f"❌ Error: {str(e)}")
