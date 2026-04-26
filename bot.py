@@ -122,8 +122,6 @@ async def on_message(message):
         # -----------------------------
         # STEP 4: FINAL FALLBACK
         # -----------------------------
-        await message.channel.send(
-            "⚠️ Couldn’t fully process this Instagram post. Here’s the link instead:\n" + url
-        )
+        await message.channel.send("cant send image reels :(")
 
 client.run(TOKEN)
